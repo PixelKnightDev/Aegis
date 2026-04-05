@@ -11,6 +11,8 @@ import { extractImports } from './imports';
 import { compareDependencies } from './comparator';
 import { ComparatorResult } from '../types';
 
+const DEBUG = process.env.AEGIS_DEBUG === 'true';
+
 // 1. Re-export everything exactly as you had it
 export { fetchPackage, parsePackageJson, cleanup } from './fetcher';
 export { extractImports, normalizeImport, IMPORT_PATTERNS } from './imports';
@@ -32,13 +34,13 @@ export async function runCorePipeline(
   packageName: string,
   version: string = 'latest'
 ): Promise<CorePipelineResult> {
-  console.log(`[Core] Fetching ${packageName}@${version}...`);
+  if (DEBUG) console.log(`[Core] Fetching ${packageName}@${version}...`);
   const { extractedPath, metadata } = await fetchPackage(packageName, version);
 
-  console.log(`[Core] Extracting imports from ${extractedPath}...`);
+  if (DEBUG) console.log(`[Core] Extracting imports from ${extractedPath}...`);
   const imports = await extractImports(extractedPath);
 
-  console.log(`[Core] Comparing dependencies...`);
+  if (DEBUG) console.log(`[Core] Comparing dependencies...`);
   const comparatorData = compareDependencies(metadata, imports);
 
   // Return the raw path so Person 2 can run their heuristic scans,

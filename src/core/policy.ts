@@ -119,6 +119,11 @@ function generateReasons(input: FullScanInput, riskScore: FullRiskScore): string
     reasons.push(`🔴 Gemini AI flagged: ${parts.join('; ')} [+${b.gemini}]`);
   }
 
+  if (b.geminiDeduction > 0) {
+    const fp = input.gemini?.validation?.false_positives ?? [];
+    reasons.push(`✅ Gemini validated false positives: [${fp.join(', ')}] [-${b.geminiDeduction}]`);
+  }
+
   // Phantom package sub-scores
   for (const phantom of riskScore.phantomDetails) {
     if (phantom.score > 0) {

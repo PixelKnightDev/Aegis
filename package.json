@@ -6,6 +6,12 @@
   "bin": {
     "ags": "./dist/main.js"
   },
+  "files": [
+    "dist/"
+  ],
+  "engines": {
+    "node": ">=18.0.0"
+  },
   "scripts": {
     "build": "tsc",
     "dev": "ts-node src/main.ts",
@@ -25,11 +31,10 @@
   "dependencies": {
     "@babel/parser": "^7.29.2",
     "@babel/traverse": "^7.29.0",
-    "@google/generative-ai": "^0.24.1",
-    "axios": "^1.7.0",
     "chalk": "^4.1.2",
     "commander": "^12.1.0",
     "dotenv": "^16.4.0",
+    "groq-sdk": "^1.1.2",
     "mongodb": "^6.8.0",
     "ora": "^5.4.1",
     "tar": "^7.4.0"

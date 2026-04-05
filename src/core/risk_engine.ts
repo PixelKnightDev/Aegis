@@ -63,11 +63,19 @@ export interface GeminiDomainVerdict {
   };
 }
 
+/** Gemini false positive validation result */
+export interface GeminiValidationResult {
+  false_positives: string[];
+  confirmed_threats: string[];
+  reasoning: Record<string, string>;
+}
+
 /** Combined Gemini results — null if not invoked */
 export interface GeminiResults {
   typosquat?: GeminiTyposquatResult;
   script?: GeminiScriptResult;
   domainVerdicts?: GeminiDomainVerdict[];
+  validation?: GeminiValidationResult;
 }
 
 /**
@@ -101,6 +109,10 @@ export interface FullScanInput {
   ecosystem?: string;
   /** Phantom dependency names from comparator */
   phantomDeps: string[];
+  /** Dependencies both declared AND found in source — used for ratio scoring */
+  usedDeps?: string[];
+  /** Total source file count in the extracted package — used for compiled package dampening */
+  totalFileCount?: number;
   /** P2's scanner output for the parent package */
   scannerOutput: ScannerOutput;
   /** Gemini results for parent (null if not invoked) */
@@ -119,6 +131,7 @@ export interface FullRiskBreakdown {
   fs: number;
   entropy: number;
   gemini: number;
+  geminiDeduction: number;
   phantomPackages: number;
 }
 
@@ -158,7 +171,7 @@ export const WEIGHTS = {
  */
 function scoreScannerOutput(
   output: ScannerOutput | undefined
-): Omit<FullRiskBreakdown, 'phantom' | 'gemini' | 'phantomPackages'> {
+): Omit<FullRiskBreakdown, 'phantom' | 'gemini' | 'geminiDeduction' | 'phantomPackages'> {
   // Defensive: handle undefined/null from upstream
   const scripts = output?.scripts || [];
   const exec = output?.exec || [];
@@ -228,14 +241,50 @@ function scoreGemini(gemini: GeminiResults | null | undefined): number {
  * @returns FullRiskScore with total, breakdown, and phantom details
  */
 export function calculateFullRisk(input: FullScanInput): FullRiskScore {
-  // 1. Phantom deps score
+  // 1. Phantom deps score — proportional, ratio-based
   const phantomDeps = input.phantomDeps || [];
-  const phantomScore = phantomDeps.length > 0 ? WEIGHTS.phantom : 0;
+  const usedDeps = input.usedDeps || [];
+  const totalDeclaredDeps = phantomDeps.length + usedDeps.length;
+  const phantomRatio = totalDeclaredDeps > 0 ? phantomDeps.length / totalDeclaredDeps : 0;
+
+  let phantomScore = 0;
+  if (phantomDeps.length === 0) {
+    phantomScore = 0;
+  } else if (phantomDeps.length <= 2 && phantomRatio > 0.3) {
+    // 1-2 phantom deps making up a large chunk of a small package → very suspicious
+    phantomScore = 50;
+  } else if (phantomRatio > 0.5) {
+    // More than half the declared deps are phantom → suspicious
+    phantomScore = 40;
+  } else if (phantomRatio > 0.2) {
+    // Moderate ratio → likely compiled package with import erasure
+    phantomScore = 15;
+  } else {
+    // Very low ratio → almost certainly a compiled/bundled package
+    phantomScore = 5;
+  }
+
+  // Dampen for large compiled packages (>100 source files)
+  if (input.totalFileCount && input.totalFileCount > 100 && phantomScore > 0) {
+    phantomScore = Math.floor(phantomScore * 0.3);
+  }
 
   // 2. Parent scanner signals
   const parentSignals = scoreScannerOutput(input.scannerOutput);
 
-  // 3. Parent Gemini
+  // 2b. Apply false positive deductions from Gemini validation
+  const fpCategories = input.gemini?.validation?.false_positives ?? [];
+  const validatedSignals = { ...parentSignals };
+  let geminiDeduction = 0;
+  for (const cat of fpCategories) {
+    const key = cat as keyof typeof validatedSignals;
+    if (key in validatedSignals && validatedSignals[key] > 0) {
+      geminiDeduction += validatedSignals[key];
+      validatedSignals[key] = 0;
+    }
+  }
+
+  // 3. Parent Gemini (additive)
   const geminiScore = scoreGemini(input.gemini);
 
   // 4. Recursive phantom package scores
@@ -257,20 +306,22 @@ export function calculateFullRisk(input: FullScanInput): FullRiskScore {
     });
   }
 
-  // 5. Build breakdown
+  // 5. Build breakdown (uses validatedSignals — FP categories are zeroed)
   const breakdown: FullRiskBreakdown = {
     phantom: phantomScore,
-    ...parentSignals,
+    ...validatedSignals,
     gemini: geminiScore,
+    geminiDeduction,
     phantomPackages: totalPhantomScore,
   };
 
-  // 6. Total — NOT capped
-  const total =
+  // 6. Total — clamped at 0
+  const total = Math.max(0,
     phantomScore +
-    Object.values(parentSignals).reduce((s, v) => s + v, 0) +
+    Object.values(validatedSignals).reduce((s, v) => s + v, 0) +
     geminiScore +
-    totalPhantomScore;
+    totalPhantomScore
+  );
 
   return { total, breakdown, phantomDetails };
 }

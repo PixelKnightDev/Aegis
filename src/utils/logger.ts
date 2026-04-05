@@ -16,6 +16,8 @@ import {
   GeminiResults,
 } from '../core/risk_engine';
 
+const DEBUG = process.env.AEGIS_DEBUG === 'true';
+
 // ─── MongoDB Document Schema ────────────────────────────────
 
 export interface ScanLogDocument {
@@ -60,7 +62,7 @@ const CONNECTION_TIMEOUT_MS = 5000;
 export async function initDatabase(): Promise<void> {
   const uri = process.env.MONGODB_URI;
   if (!uri) {
-    console.warn('⚠️  MONGODB_URI not set — database logging disabled.');
+    if (DEBUG) console.warn('⚠️  MONGODB_URI not set — database logging disabled.');
     return;
   }
 
@@ -81,10 +83,10 @@ export async function initDatabase(): Promise<void> {
     await scanLogsCollection.createIndex({ ecosystem: 1 });
 
     isConnected = true;
-    console.log('✅ Connected to MongoDB Atlas');
+    if (DEBUG) console.log('✅ Connected to MongoDB Atlas');
   } catch (error) {
     const msg = error instanceof Error ? error.message : String(error);
-    console.warn(`⚠️  MongoDB connection failed: ${msg}\n   Database logging disabled.`);
+    if (DEBUG) console.warn(`⚠️  MongoDB connection failed: ${msg}\n   Database logging disabled.`);
     client = null;
     db = null;
     scanLogsCollection = null;
@@ -141,7 +143,7 @@ export async function logScan(
     await scanLogsCollection.insertOne(doc);
   } catch (error) {
     const msg = error instanceof Error ? error.message : String(error);
-    console.warn(`⚠️  Failed to log scan: ${msg}`);
+    if (DEBUG) console.warn(`⚠️  Failed to log scan: ${msg}`);
   }
 }
 
@@ -185,7 +187,7 @@ export async function logScanReport(report: {
     await scanLogsCollection.insertOne(doc as ScanLogDocument);
   } catch (error) {
     const msg = error instanceof Error ? error.message : String(error);
-    console.warn(`⚠️  Failed to log scan report: ${msg}`);
+    if (DEBUG) console.warn(`⚠️  Failed to log scan report: ${msg}`);
   }
 }
 
@@ -194,8 +196,7 @@ export async function getScanHistory(
   limit: number = 10
 ): Promise<ScanLogDocument[]> {
   if (!isConnected || !scanLogsCollection) {
-    console.warn('⚠️  Database not connected — cannot retrieve history.');
-    return [];
+    throw new Error('Database not connected. Make sure MongoDB is running and MONGODB_URI is configured.');
   }
 
   try {
@@ -206,8 +207,7 @@ export async function getScanHistory(
       .toArray();
   } catch (error) {
     const msg = error instanceof Error ? error.message : String(error);
-    console.warn(`⚠️  Failed to get history: ${msg}`);
-    return [];
+    throw new Error(`Failed to retrieve history: ${msg}`);
   }
 }
 

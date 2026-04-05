@@ -17,6 +17,8 @@ import { builtinModules } from 'module';
 import * as path from 'path';
 import * as parser from '@babel/parser';
 
+const DEBUG = process.env.AEGIS_DEBUG === 'true';
+
 // Safely import Babel traverse for TypeScript environments
 import _traverse from '@babel/traverse';
 const traverse = typeof _traverse === 'function' ? _traverse : (_traverse as any).default;
@@ -77,7 +79,7 @@ export async function extractImports(
           ], 
         });
 
-        console.log(`🟢 [AST] Successfully parsed: ${path.basename(file)}`);
+        if (DEBUG) console.log(`🟢 [AST] Successfully parsed: ${path.basename(file)}`);
 
         traverse(ast, {
           // Catch: import { x } from 'y'
@@ -140,7 +142,7 @@ export async function extractImports(
           }
         };
 
-        console.log(`🟠 [REGEX] AST failed. Regex fallback triggered for: ${path.basename(file)}`);
+        if (DEBUG) console.log(`🟠 [REGEX] AST failed. Regex fallback triggered for: ${path.basename(file)}`);
 
         extractWithRegex(IMPORT_PATTERNS.REQUIRE);
         extractWithRegex(IMPORT_PATTERNS.ES_IMPORT);
